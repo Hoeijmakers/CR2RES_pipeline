@@ -63,7 +63,7 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         detlin_dark_list = []
         detlin_lamp_list = []
         for i in range(len(detlin_list)):
-            print(detlin_list[i].split('/')[-1],detlin_type_list[i])
+            # print(detlin_list[i].split('/')[-1],detlin_type_list[i])
             if detlin_type_list[i] == 'FLAT,LAMP,DETCHECK':
                 detlin_lamp_list = np.append(detlin_lamp_list,detlin_list[i]+'   DETLIN_LAMP')
             if detlin_type_list[i] == 'DARK,DETCHECK':
@@ -93,18 +93,23 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
     dark_list=[]
     flat_list=[]
+    fpet_list=[]
     sci_A_list=[]
 
     for i in range(len(fits_list)):
-        print(fits_list[i].split('/')[-1],type_list[i]+'\t\t\t',dits_list[i])
+        # print(fits_list[i].split('/')[-1],type_list[i]+'\t\t\t',dits_list[i])
         if type_list[i] == 'DARK':
             dark_list = np.append(dark_list,fits_list[i]+'   '+type_list[i])
         if type_list[i] == 'FLAT':
             flat_list = np.append(flat_list,fits_list[i]+'   '+type_list[i])
+        if type_list[i] == 'WAVE,FPET':
+            fpet_list = np.append(fpet_list,fits_list[i]+'   WAVE_FPET')
 
-    print('')
-    for i in range(len(static_list)):
-        print(static_list[i].split('/')[-1],static_type_list[i])
+    # print('')
+    # for i in range(len(static_list)):
+    #     print(static_list[i].split('/')[-1],static_type_list[i])
+
+    print(fpet_list)
 
     if len(dark_list) == 0:
         print('ERROR: No DARK frames detected. Check that you downloaded them properly and that.'
@@ -113,12 +118,14 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     if len(flat_list) == 0:
         print('ERROR: No FLAT frames detected. Check that you downloaded them properly.')
         sys.exit()
-
+    if len(fpet_list) == 0:
+        print('ERROR: No FPET,WAVE frames detected. Check that you downloaded them properly.')
+        sys.exit()
 
     print('')
     print('---------')
     print('')
-    print(flat_list)
+
 
     #Write the DARK sof
     if not (outpath/"cal_dark").exists(): os.mkdir(outpath/"cal_dark")
@@ -127,6 +134,49 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         outF.write(line)
         outF.write("\n")
     outF.close()
+
+    #Write the UTIL CALIB (FLAT) sof. Requires DARK, BPM and DETLIN (optional)
+    if not (outpath/"util_calib_flat").exists(): os.mkdir(outpath/"util_calib_flat")
+    outF = open(outpath/"util_calib_flat/CALIB.txt", "w")
+    for line in flat_list:
+        outF.write(line)
+        outF.write("\n")
+    darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_master.fits')
+    bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_bpm.fits')
+    if len(darkfiles) < 1:
+        raise Exception("No ~1.5 second master dark found for FLAT reduction.")
+    if len(bpmfiles) < 1:
+        raise Exception("No ~1.5 second master BPM found for FLAT reduction.")
+    if len(darkfiles) > 1:
+        raise Exception("More than 1 ~1.5 second master dark found for FLAT reduction??")
+    if len(bpmfiles) > 1:
+        raise Exception("More than 1 ~1.5 second master BPM found for FLAT reduction??")
+    outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+    outF.write("\n")
+    outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+
+    if len(detlin) > 0:
+        outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+        outF.write("\n")
+    outF.close()
+
+    #Write the UTIL_TRACE sof.
+    if not (outpath/"util_trace").exists(): os.mkdir(outpath/"util_trace")
+    outF = open(outpath/"util_trace/TRACE.txt", "w")
+    outF.write(str(outpath)+"/util_calib_flat/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
+    outF.close()
+
+    #Write the util_slit_curv sof.
+    if not (outpath/"util_slit_curv").exists(): os.mkdir(outpath/"util_slit_curv")
+    outF = open(outpath/"util_slit_curv/SLITCURV.txt", "w")
+    outF.write(fpet_list[0])
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_trace/cr2res_util_calib_calibrated_collapsed_tw.fits CAL_FLAT_TW')
+    outF.close()
+
+
+
+
 
     #Write the FLAT sof. Requires DARK, BPM and DETLIN (optional)
     if not (outpath/"cal_flat").exists(): os.mkdir(outpath/"cal_flat")
@@ -147,6 +197,9 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.write(bpmfiles[0]+' CAL_DARK_BPM')
     outF.write("\n")
     outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+
+    if len(detlin) > 0:
+        outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
     outF.close()
 
 
@@ -197,7 +250,7 @@ def move_to(filename,outpath,newname=None):
 def detlin(outpath):
     import os
     from pathlib import Path
-    print('==========>>>>> CREATING DETLIN COEFFICIENTS<<<<<==========')
+    print('==========>>>>> CREATING DETLIN COEFFICIENTS <<<<<==========')
     outpath = Path(outpath)
     sofpath = outpath/"detlin/DETLIN.txt"
     check_files_exist(sofpath)
@@ -207,28 +260,63 @@ def master_dark(outpath):
     """This is a wrapper for the cal_dark recipe."""
     import os
     from pathlib import Path
-    print('==========>>>>> CREATING MASTER DARK AND BAD PIXEL MAP<<<<<==========')
+    print('==========>>>>> CREATING MASTER DARK AND BAD PIXEL MAP <<<<<==========')
     outpath = Path(outpath)
     sofpath = outpath/"cal_dark/DARK.txt"
     check_files_exist(sofpath)
     os.system('esorex '+' --output-dir='+str(outpath/'cal_dark/')+' cr2res_cal_dark '+str(sofpath))
+
+def util_calib_flat(outpath):
+    """This is a wrapper for the util_calib recipe."""
+    import os
+    from pathlib import Path
+    print('==========>>>>> CREATING MASTER FLAT <<<<<==========')
+    outpath = Path(outpath)
+    sofpath = outpath/"util_calib_flat/CALIB.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'util_calib_flat/')+' cr2res_util_calib --collapse="MEAN" '+str(sofpath))
+
+def util_trace(outpath):
+    """This is a wrapper for the util_trace recipe."""
+    import os
+    from pathlib import Path
+    print('==========>>>>> CREATING TRACE <<<<<==========')
+    outpath = Path(outpath)
+    sofpath = outpath/"util_trace/TRACE.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'util_trace/')+' cr2res_util_trace '+str(sofpath))
+
+def util_slit_curv(outpath):
+    """This is a wrapper for the util_slit_curv recipe."""
+    import os
+    from pathlib import Path
+    print('==========>>>>> CREATING SLIT MAP <<<<<==========')
+    outpath = Path(outpath)
+    sofpath = outpath/"util_slit_curv/SLITCURV.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'util_slit_curv/')+' cr2res_util_slit_curv '+str(sofpath))
+
+
 
 def master_flat(outpath):
     """This is a wrapper for the cal_flat recipe."""
     import os
     from pathlib import Path
     print(os.getcwd())
-    print('==========>>>>> CREATING MASTER FLAT<<<<<==========')
+    print('==========>>>>> CREATING MASTER FLAT <<<<<==========')
     outpath = Path(outpath)
     sofpath = outpath/"cal_flat/FLAT.txt"
     check_files_exist(sofpath)
     os.system('esorex '+' --output-dir='+str(outpath/'cal_flat/')+' cr2res_cal_flat '+str(sofpath))
 
 
+
 inpath = '/data/jens/observations/55-cnc/dayside_crires_raw_night4'
 outpath = 'test'
 
 create_sof(inpath,outpath,detlin='/data/jens/observations/55-cnc/detlin/')
-detlin(outpath)
+# detlin(outpath)
 # master_dark(outpath)
-# master_flat(outpath)
+# util_calib_flat(outpath)
+# util_trace(outpath)
+util_slit_curv(outpath)
