@@ -1,4 +1,4 @@
-def create_sof(inpath,outpath,dit=0):
+def create_sof(inpath,outpath,dit=0,detlin=''):
     """This script creates the file association lists (sof files) that are the main inputs
     to the pipeline recipes when called with esorex. The user provides the path of the raw data
     foe;s (inpath) as downloaded from the ESO archive. These must be sorted by instrument mode
@@ -7,6 +7,9 @@ def create_sof(inpath,outpath,dit=0):
     reduction products will be stored. Finally, the user manually provides the exposure time they
     expect (in case of DARK and OBJECT frames with multiple exposures).
 
+
+    Set the detlin parameter to a path where you have downloaded the detector linearity raw data
+    for use with the cal_detlin recipe. This is optional though.
     """
     import os
     import numpy as np
@@ -22,7 +25,7 @@ def create_sof(inpath,outpath,dit=0):
         os.mkdir(outpath)
     else:
         really = input(f"{str(outpath)} already exists. Do you want to continue? A lot of "
-        "might happen [y/N]")
+        "overwriting might happen [y/N]")
         if really.lower()=='y':
             pass
         else:
@@ -31,10 +34,11 @@ def create_sof(inpath,outpath,dit=0):
     fits_list = os.listdir(inpath)
     fits_list = [str(i) for i in Path(inpath).glob('CRIRE*.fits')]
     static_list = [str(i) for i in Path(inpath).glob('M.CRIRE*.fits')]
-
+    detlin_list = []
 
     type_list=[]
     static_type_list=[]
+    detlin_type_list=[]
     dits_list = []
 
     for file in static_list:
@@ -46,35 +50,103 @@ def create_sof(inpath,outpath,dit=0):
             dits_list=np.append(dits_list,fu[0].header['EXPTIME'])
 
 
+    if len(detlin)>0:
+        print(f'Loading detlin files from {detlin}')
+        detlinpath = Path(detlin)
+
+        detlin_list = os.listdir(detlinpath)
+        detlin_list = [str(i) for i in Path(detlinpath).glob('CRIRE*.fits')]
+        for d in detlin_list:
+            with fitsio.open(d) as fu:
+                detlin_type_list.append(fu[0].header['HIERARCH ESO DPR TYPE'])
+
+        detlin_dark_list = []
+        detlin_lamp_list = []
+        for i in range(len(detlin_list)):
+            print(detlin_list[i].split('/')[-1],detlin_type_list[i])
+            if detlin_type_list[i] == 'FLAT,LAMP,DETCHECK':
+                detlin_lamp_list = np.append(detlin_lamp_list,detlin_list[i]+'   DETLIN_LAMP')
+            if detlin_type_list[i] == 'DARK,DETCHECK':
+                detlin_dark_list = np.append(detlin_dark_list,detlin_list[i]+'   DETLIN_DARK')
+        if len(detlin_dark_list) == 0:
+            print('ERROR: No DARK frames detected. Check that you downloaded them properly and that.'
+            'if you have set a DIT requirement, that DARKS were taken at that exposure time.')
+            sys.exit()
+        if len(detlin_lamp_list) == 0:
+            print('ERROR: No FLAT frames detected. Check that you downloaded them properly.')
+            sys.exit()
+
+        if not (outpath/"detlin").exists(): os.mkdir(outpath/"detlin")
+        outF = open(outpath/"detlin/DETLIN.txt", "w")
+        for line in detlin_dark_list:
+            outF.write(line)
+            outF.write("\n")
+        for line in detlin_lamp_list:
+            outF.write(line)
+            outF.write("\n")
+        outF.close()
+
+
 
 
 
 
     dark_list=[]
+    flat_list=[]
     sci_A_list=[]
 
     for i in range(len(fits_list)):
         print(fits_list[i].split('/')[-1],type_list[i]+'\t\t\t',dits_list[i])
-        if type_list[i] == 'DARK' and (dit==0 or dit==dits_list[i]):
-            dark_list = np.append(dark_list,fits_list[i]+'   '+type_list[i])#+'   %s' % dits_list[i])
+        if type_list[i] == 'DARK':
+            dark_list = np.append(dark_list,fits_list[i]+'   '+type_list[i])
+        if type_list[i] == 'FLAT':
+            flat_list = np.append(flat_list,fits_list[i]+'   '+type_list[i])
 
+    print('')
+    for i in range(len(static_list)):
+        print(static_list[i].split('/')[-1],static_type_list[i])
 
     if len(dark_list) == 0:
         print('ERROR: No DARK frames detected. Check that you downloaded them properly and that.'
         'if you have set a DIT requirement, that DARKS were taken at that exposure time.')
         sys.exit()
+    if len(flat_list) == 0:
+        print('ERROR: No FLAT frames detected. Check that you downloaded them properly.')
+        sys.exit()
+
 
     print('')
     print('---------')
     print('')
-    print(dark_list)
+    print(flat_list)
 
-
+    #Write the DARK sof
     if not (outpath/"cal_dark").exists(): os.mkdir(outpath/"cal_dark")
     outF = open(outpath/"cal_dark/DARK.txt", "w")
     for line in dark_list:
         outF.write(line)
         outF.write("\n")
+    outF.close()
+
+    #Write the FLAT sof. Requires DARK, BPM and DETLIN (optional)
+    if not (outpath/"cal_flat").exists(): os.mkdir(outpath/"cal_flat")
+    outF = open(outpath/"cal_flat/FLAT.txt", "w")
+    for line in flat_list:
+        outF.write(line)
+        outF.write("\n")
+    darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_master.fits')
+    bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_bpm.fits')
+    if len(darkfiles) < 1:
+        raise Exception("No ~1.5 second master dark found for FLAT reduction.")
+    if len(bpmfiles) < 1:
+        raise Exception("No ~1.5 second master BPM found for FLAT reduction.")
+    if len(darkfiles) > 1:
+        raise Exception("More than 1 ~1.5 second master dark found for FLAT reduction??")
+    if len(bpmfiles) > 1:
+        raise Exception("More than 1 ~1.5 second master BPM found for FLAT reduction??")
+    outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+    outF.write("\n")
+    outF.write(darkfiles[0]+' CAL_DARK_MASTER')
     outF.close()
 
 
@@ -122,20 +194,41 @@ def move_to(filename,outpath,newname=None):
     #==============================================================================================#
 
 
-def master_dark(outpath):
-    """This is a wrapper for the mdark recipe."""
+def detlin(outpath):
     import os
     from pathlib import Path
-    print('==========>>>>> CREATING MASTER DARK AND HOT PIXEL MAP<<<<<==========')
+    print('==========>>>>> CREATING DETLIN COEFFICIENTS<<<<<==========')
     outpath = Path(outpath)
-    check_files_exist(outpath/"cal_dark/DARK.txt")
-    os.system("cd "+str(outpath/'cal_dark/')+"; esorex cr2res_cal_dark DARK.txt")
+    sofpath = outpath/"detlin/DETLIN.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'detlin/')+' cr2res_cal_detlin '+str(sofpath))
 
+def master_dark(outpath):
+    """This is a wrapper for the cal_dark recipe."""
+    import os
+    from pathlib import Path
+    print('==========>>>>> CREATING MASTER DARK AND BAD PIXEL MAP<<<<<==========')
+    outpath = Path(outpath)
+    sofpath = outpath/"cal_dark/DARK.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'cal_dark/')+' cr2res_cal_dark '+str(sofpath))
 
+def master_flat(outpath):
+    """This is a wrapper for the cal_flat recipe."""
+    import os
+    from pathlib import Path
+    print(os.getcwd())
+    print('==========>>>>> CREATING MASTER FLAT<<<<<==========')
+    outpath = Path(outpath)
+    sofpath = outpath/"cal_flat/FLAT.txt"
+    check_files_exist(sofpath)
+    os.system('esorex '+' --output-dir='+str(outpath/'cal_flat/')+' cr2res_cal_flat '+str(sofpath))
 
 
 inpath = '/data/jens/observations/55-cnc/dayside_crires_raw_night4'
 outpath = 'test'
 
-create_sof(inpath,outpath,dit=0)
-master_dark(outpath)
+create_sof(inpath,outpath,detlin='/data/jens/observations/55-cnc/detlin/')
+detlin(outpath)
+# master_dark(outpath)
+# master_flat(outpath)
