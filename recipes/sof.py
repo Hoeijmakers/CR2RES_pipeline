@@ -89,8 +89,6 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
 
 
-
-
     dark_list=[]
     flat_list=[]
     fpet_list=[]
@@ -109,7 +107,6 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     # for i in range(len(static_list)):
     #     print(static_list[i].split('/')[-1],static_type_list[i])
 
-    print(fpet_list)
 
     if len(dark_list) == 0:
         print('ERROR: No DARK frames detected. Check that you downloaded them properly and that.'
@@ -160,6 +157,8 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         outF.write("\n")
     outF.close()
 
+
+
     #Write the UTIL_TRACE sof.
     if not (outpath/"util_trace").exists(): os.mkdir(outpath/"util_trace")
     outF = open(outpath/"util_trace/TRACE.txt", "w")
@@ -173,8 +172,6 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.write("\n")
     outF.write(str(outpath)+'/util_trace/cr2res_util_calib_calibrated_collapsed_tw.fits CAL_FLAT_TW')
     outF.close()
-
-
 
 
 
@@ -201,6 +198,20 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     if len(detlin) > 0:
         outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
     outF.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -238,85 +249,3 @@ def move_to(filename,outpath,newname=None):
         shutil.move(filename,outpath/filename)
     else:
         shutil.move(filename,outpath/newname)
-
-    #==============================================================================================#
-    #==============================================================================================#
-    #What follows are the wrappers for the esorex recipes. These are executed one by one when
-    #calling this script, all the way at the end of this file.
-    #==============================================================================================#
-    #==============================================================================================#
-
-
-def detlin(outpath):
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING DETLIN COEFFICIENTS <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"detlin/DETLIN.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'detlin/')+' cr2res_cal_detlin '+str(sofpath))
-
-def master_dark(outpath):
-    """This is a wrapper for the cal_dark recipe."""
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING MASTER DARK AND BAD PIXEL MAP <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"cal_dark/DARK.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'cal_dark/')+' cr2res_cal_dark '+str(sofpath))
-
-def util_calib_flat(outpath):
-    """This is a wrapper for the util_calib recipe."""
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING MASTER FLAT <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"util_calib_flat/CALIB.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'util_calib_flat/')+' cr2res_util_calib --collapse="MEAN" '+str(sofpath))
-
-def util_trace(outpath):
-    """This is a wrapper for the util_trace recipe."""
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING TRACE <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"util_trace/TRACE.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'util_trace/')+' cr2res_util_trace '+str(sofpath))
-
-def util_slit_curv(outpath):
-    """This is a wrapper for the util_slit_curv recipe."""
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING SLIT MAP <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"util_slit_curv/SLITCURV.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'util_slit_curv/')+' cr2res_util_slit_curv '+str(sofpath))
-
-
-
-def master_flat(outpath):
-    """This is a wrapper for the cal_flat recipe."""
-    import os
-    from pathlib import Path
-    print('==========>>>>> CREATING MASTER FLAT <<<<<==========')
-    outpath = Path(outpath)
-    sofpath = outpath/"cal_flat/FLAT.txt"
-    check_files_exist(sofpath)
-    os.system('esorex '+' --output-dir='+str(outpath/'cal_flat/')+' cr2res_cal_flat '+str(sofpath))
-
-
-from recipes.sof import create_sof
-from recipes import cal, util
-inpath = '/data/jens/observations/55-cnc/dayside_crires_raw_night4'
-outpath = 'test'
-
-create_sof(inpath,outpath,detlin='/data/jens/observations/55-cnc/detlin/')
-cal.detlin(outpath)
-cal.master_dark(outpath)
-util.util_calib_flat(outpath)
-util.util_trace(outpath)
-util.util_slit_curv(outpath)
