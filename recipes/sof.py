@@ -174,6 +174,38 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.close()
 
 
+    #Write the util_extract_calib sof.
+    if not (outpath/"util_extract_calib").exists(): os.mkdir(outpath/"util_extract_calib")
+    outF = open(outpath/"util_extract_calib/EXTRACT_CALIB.txt", "w")
+    outF.write(str(outpath)+"/util_calib_flat/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+    outF.close()
+
+
+    #Normflat
+    if not (outpath/"util_normflat").exists(): os.mkdir(outpath/"util_normflat")
+    outF = open(outpath/"util_normflat/NORMFLAT.txt", "w")
+    outF.write(str(outpath)+"/util_calib_flat/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_extract_calib/cr2res_util_calib_calibrated_collapsed_extrModel.fits UTIL_SLIT_MODEL')
+    outF.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     #Write the FLAT sof. Requires DARK, BPM and DETLIN (optional)
     if not (outpath/"cal_flat").exists(): os.mkdir(outpath/"cal_flat")
