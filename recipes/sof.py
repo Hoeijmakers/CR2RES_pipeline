@@ -1,3 +1,29 @@
+def print_raw_list(inpath):
+    import os
+    import astropy.io.fits as fitsio
+    from pathlib import Path
+    import numpy as np
+    fits_list = os.listdir(inpath)
+    fits_list = [str(i) for i in Path(inpath).glob('CRIRE*.fits')]
+    static_list = [str(i) for i in Path(inpath).glob('M.CRIRE*.fits')]
+    static_type_list=[]
+    type_list=[]
+    dits_list = []
+    for file in fits_list:
+        with fitsio.open(file) as fu:
+            type_list.append(fu[0].header['HIERARCH ESO DPR TYPE'])
+            dits_list=np.append(dits_list,fu[0].header['EXPTIME'])
+    for file in static_list:
+        with fitsio.open(file) as fu:
+            static_type_list.append(fu[0].header['ESO PRO CATG'])
+
+    for i in range(len(fits_list)):
+        print(fits_list[i].split('/')[-1],type_list[i]+'\t\t\t',dits_list[i])
+    print('')
+    for i in range(len(static_list)):
+        print(static_list[i].split('/')[-1],static_type_list[i]+'\t\t\t')
+
+
 def create_sof(inpath,outpath,dit=0,detlin=''):
     """This script creates the file association lists (sof files) that are the main inputs
     to the pipeline recipes when called with esorex. The user provides the path of the raw data
@@ -51,7 +77,7 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
 
     if len(detlin)>0:
-        print(f'Loading detlin files from {detlin}')
+        # print(f'Creating detlin sof using files located in {detlin}')
         detlinpath = Path(detlin)
 
         detlin_list = os.listdir(detlinpath)
@@ -63,7 +89,6 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         detlin_dark_list = []
         detlin_lamp_list = []
         for i in range(len(detlin_list)):
-            # print(detlin_list[i].split('/')[-1],detlin_type_list[i])
             if detlin_type_list[i] == 'FLAT,LAMP,DETCHECK':
                 detlin_lamp_list = np.append(detlin_lamp_list,detlin_list[i]+'   DETLIN_LAMP')
             if detlin_type_list[i] == 'DARK,DETCHECK':
@@ -92,16 +117,23 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     dark_list=[]
     flat_list=[]
     fpet_list=[]
+    une_list=[]
+    emission_list=[]
     sci_A_list=[]
 
     for i in range(len(fits_list)):
-        # print(fits_list[i].split('/')[-1],type_list[i]+'\t\t\t',dits_list[i])
         if type_list[i] == 'DARK':
             dark_list = np.append(dark_list,fits_list[i]+'   '+type_list[i])
         if type_list[i] == 'FLAT':
             flat_list = np.append(flat_list,fits_list[i]+'   '+type_list[i])
         if type_list[i] == 'WAVE,FPET':
             fpet_list = np.append(fpet_list,fits_list[i]+'   WAVE_FPET')
+        if type_list[i] == 'WAVE,UNE':
+            une_list = np.append(une_list,fits_list[i]+'   WAVE_UNE')
+    for i in range(len(static_list)):
+        if static_type_list[i] == 'EMISSION_LINES':
+            emission_list = np.append(emission_list,static_list[i]+'   EMISSION_LINES')
+
 
     # print('')
     # for i in range(len(static_list)):
@@ -117,6 +149,15 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         sys.exit()
     if len(fpet_list) == 0:
         print('ERROR: No FPET,WAVE frames detected. Check that you downloaded them properly.')
+        sys.exit()
+    if len(une_list) == 0:
+        print('ERROR: No UNE,WAVE frames detected. Check that you downloaded them properly.')
+        print('UNE (Uranium-Neon) frames may not be found by the calselector so its possible '
+        'that you have had to download it manually.')
+        sys.exit()
+    if len(emission_list) == 0:
+        print('ERROR: No EMISSION_LINES frames detected. This is a static calibration file.')
+        print("Check that you have downloaded it properly.")
         sys.exit()
 
     print('')
@@ -174,7 +215,7 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.close()
 
 
-    #Write the util_extract_calib sof.
+    #Write the util_extract_calib sof. Extract the slit model?
     if not (outpath/"util_extract_calib").exists(): os.mkdir(outpath/"util_extract_calib")
     outF = open(outpath/"util_extract_calib/EXTRACT_CALIB.txt", "w")
     outF.write(str(outpath)+"/util_calib_flat/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
@@ -192,44 +233,120 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.close()
 
 
+    #Write the UNE sof.
+    if not (outpath/"util_calib_une").exists(): os.mkdir(outpath/"util_calib_une")
+    outF = open(outpath/"util_calib_une/CALIB.txt", "w")
+    if len(detlin) > 0:
+        outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+        outF.write("\n")
+    outF.write(une_list[0])
+    outF.write("\n")
+    darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_120*_master.fits')
+    bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_120*_bpm.fits')
+    if len(darkfiles) < 1:
+        raise Exception("No 120 second master dark found for FLAT reduction.")
+    if len(bpmfiles) < 1:
+        raise Exception("No 120 second master BPM found for FLAT reduction.")
+    if len(darkfiles) > 1:
+        raise Exception("More than 1 120 second master dark found for FLAT reduction??")
+    if len(bpmfiles) > 1:
+        raise Exception("More than 1 120 second master BPM found for FLAT reduction??")
+    outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+    outF.write("\n")
+    outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+    outF.write("\n")
+    outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
+    outF.close()
+
+
+    #Write the util_extract_calib sof. Extract wave UNE
+    if not (outpath/"util_extract_une").exists(): os.mkdir(outpath/"util_extract_une")
+    outF = open(outpath/"util_extract_une/EXTRACT_UNE.txt", "w")
+    outF.write(str(outpath)+"/util_calib_une/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+    outF.close()
+
+
+    if not (outpath/"util_wave").exists(): os.mkdir(outpath/"util_wave")
+    outF = open(outpath/"util_wave/WAVE.txt", "w")
+    outF.write(str(outpath)+'/util_extract_une/cr2res_util_calib_calibrated_collapsed_extr1D.fits UTIL_EXTRACT_1D')
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+    outF.write("\n")
+    outF.write(emission_list[0])
+    outF.close()
 
 
 
 
 
 
+    #Write the FPET sof.
+    if not (outpath/"util_calib_fpet").exists(): os.mkdir(outpath/"util_calib_fpet")
+    outF = open(outpath/"util_calib_fpet/CALIB.txt", "w")
+    if len(detlin) > 0:
+        outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+        outF.write("\n")
+    outF.write(fpet_list[0])
+    outF.write("\n")
+    darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_120*_master.fits')
+    bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_120*_bpm.fits')
+    if len(darkfiles) < 1:
+        raise Exception("No 120 second master dark found for FLAT reduction.")
+    if len(bpmfiles) < 1:
+        raise Exception("No 120 second master BPM found for FLAT reduction.")
+    if len(darkfiles) > 1:
+        raise Exception("More than 1 120 second master dark found for FLAT reduction??")
+    if len(bpmfiles) > 1:
+        raise Exception("More than 1 120 second master BPM found for FLAT reduction??")
+    outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+    outF.write("\n")
+    outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+    outF.write("\n")
+    outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
+    outF.close()
 
+    #Write the util_extract_calib sof. Extract wave FPET
+    if not (outpath/"util_extract_fpet").exists(): os.mkdir(outpath/"util_extract_fpet")
+    outF = open(outpath/"util_extract_fpet/EXTRACT_FPET.txt", "w")
+    outF.write(str(outpath)+"/util_calib_fpet/cr2res_util_calib_calibrated_collapsed.fits UTIL_CALIB")
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+    outF.close()
 
-
-
-
-
+    if not (outpath/"util_wave_fpet").exists(): os.mkdir(outpath/"util_wave_fpet")
+    outF = open(outpath/"util_wave_fpet/WAVE.txt", "w")
+    outF.write(str(outpath)+'/util_extract_fpet/cr2res_util_calib_calibrated_collapsed_extr1D.fits UTIL_EXTRACT_1D')
+    outF.write("\n")
+    outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+    outF.close()
 
 
 
     #Write the FLAT sof. Requires DARK, BPM and DETLIN (optional)
-    if not (outpath/"cal_flat").exists(): os.mkdir(outpath/"cal_flat")
-    outF = open(outpath/"cal_flat/FLAT.txt", "w")
-    for line in flat_list:
-        outF.write(line)
-        outF.write("\n")
-    darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_master.fits')
-    bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_bpm.fits')
-    if len(darkfiles) < 1:
-        raise Exception("No ~1.5 second master dark found for FLAT reduction.")
-    if len(bpmfiles) < 1:
-        raise Exception("No ~1.5 second master BPM found for FLAT reduction.")
-    if len(darkfiles) > 1:
-        raise Exception("More than 1 ~1.5 second master dark found for FLAT reduction??")
-    if len(bpmfiles) > 1:
-        raise Exception("More than 1 ~1.5 second master BPM found for FLAT reduction??")
-    outF.write(bpmfiles[0]+' CAL_DARK_BPM')
-    outF.write("\n")
-    outF.write(darkfiles[0]+' CAL_DARK_MASTER')
-
-    if len(detlin) > 0:
-        outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
-    outF.close()
+    # if not (outpath/"cal_flat").exists(): os.mkdir(outpath/"cal_flat")
+    # outF = open(outpath/"cal_flat/FLAT.txt", "w")
+    # for line in flat_list:
+    #     outF.write(line)
+    #     outF.write("\n")
+    # darkfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_master.fits')
+    # bpmfiles = glob.glob(str(outpath)+"/cal_dark/"+'cr2res_cal_dark_*_1.*_bpm.fits')
+    # if len(darkfiles) < 1:
+    #     raise Exception("No ~1.5 second master dark found for FLAT reduction.")
+    # if len(bpmfiles) < 1:
+    #     raise Exception("No ~1.5 second master BPM found for FLAT reduction.")
+    # if len(darkfiles) > 1:
+    #     raise Exception("More than 1 ~1.5 second master dark found for FLAT reduction??")
+    # if len(bpmfiles) > 1:
+    #     raise Exception("More than 1 ~1.5 second master BPM found for FLAT reduction??")
+    # outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+    # outF.write("\n")
+    # outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+    #
+    # if len(detlin) > 0:
+    #     outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+    # outF.close()
 
 
 
