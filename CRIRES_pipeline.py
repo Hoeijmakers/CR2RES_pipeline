@@ -1,5 +1,4 @@
-from recipes import sof
-from recipes import cal, util
+from recipes import sof, cal, util, sci
 
 
 inpath = '/data/jens/observations/55-cnc/dayside_crires_raw_night4'
@@ -19,6 +18,7 @@ sof.create_sof(inpath,outpath,detlin='/data/jens/observations/55-cnc/detlin/')
 # util.util_extract_une(outpath)
 # util.util_wave(outpath,deg=0,err=0.1)
 # util.util_wave(outpath,deg=2,err=0.03)
-util.util_calib_fpet(outpath)
-util.util_extract_fpet(outpath)
-util.util_wave_fpet(outpath,deg=4)
+# util.util_calib_fpet(outpath)
+# util.util_extract_fpet(outpath)
+# util.util_wave_fpet(outpath,deg=4)
+sci.obs_staring(outpath)

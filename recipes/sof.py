@@ -119,7 +119,9 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     fpet_list=[]
     une_list=[]
     emission_list=[]
+    sci_list=[]
     sci_A_list=[]
+    sci_B_list=[]
 
     for i in range(len(fits_list)):
         if type_list[i] == 'DARK':
@@ -130,6 +132,9 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
             fpet_list = np.append(fpet_list,fits_list[i]+'   WAVE_FPET')
         if type_list[i] == 'WAVE,UNE':
             une_list = np.append(une_list,fits_list[i]+'   WAVE_UNE')
+        if type_list[i] == 'OBJECT':
+            sci_list = np.append(sci_list,fits_list[i]+'   OBS_STARING_JITTER')
+
     for i in range(len(static_list)):
         if static_type_list[i] == 'EMISSION_LINES':
             emission_list = np.append(emission_list,static_list[i]+'   EMISSION_LINES')
@@ -321,6 +326,28 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     outF.write("\n")
     outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
     outF.close()
+
+
+
+    if not (outpath/"obs_staring").exists(): os.mkdir(outpath/"obs_staring")
+    for i in range(len(sci_list)):
+        outF = open(outpath/f"obs_staring/SCI_{i}.txt", "w")
+        outF.write(sci_list[i])
+        outF.write("\n")
+        outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+        outF.write("\n")
+        if len(detlin) > 0:
+            outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+            outF.write("\n")
+        outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+        outF.write("\n")
+        outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+        outF.write("\n")
+        outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
+        #I do not add the blaze function on purpose.
+        outF.close()
+
+
 
 
 
