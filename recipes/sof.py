@@ -347,7 +347,24 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         #I do not add the blaze function on purpose.
         outF.close()
 
-
+    if not (outpath/"obs_nodding").exists(): os.mkdir(outpath/"obs_nodding")
+    for i in range(len(sci_list_A)):
+        outF = open(outpath/f"obs_nodding/SCI_{i}.txt", "w")
+        outF.write(sci_A_list[i])
+        outF.write(sci_B_list[i])
+        outF.write("\n")
+        outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+        outF.write("\n")
+        if len(detlin) > 0:
+            outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+            outF.write("\n")
+        outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+        outF.write("\n")
+        outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+        outF.write("\n")
+        outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
+        #I do not add the blaze function on purpose.
+        outF.close()
 
 
 
