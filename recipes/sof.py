@@ -24,7 +24,7 @@ def print_raw_list(inpath):
         print(static_list[i].split('/')[-1],static_type_list[i]+'\t\t\t')
 
 
-def create_sof(inpath,outpath,dit=0,detlin=''):
+def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
     """This script creates the file association lists (sof files) that are the main inputs
     to the pipeline recipes when called with esorex. The user provides the path of the raw data
     foe;s (inpath) as downloaded from the ESO archive. These must be sorted by instrument mode
@@ -36,6 +36,9 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
     Set the detlin parameter to a path where you have downloaded the detector linearity raw data
     for use with the cal_detlin recipe. This is optional though.
+
+    Set the pattern keyword to determine whether (and what type of) nodding sequence this is, in
+    preparation of using the obs_nodding recipe. This should be set to either 'A', 'AB', or 'ABBA'.
     """
     import os
     import numpy as np
@@ -47,15 +50,17 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
     outpath=Path(outpath)
 
+    force = True
     if not outpath.exists():
         os.mkdir(outpath)
     else:
-        really = input(f"{str(outpath)} already exists. Do you want to continue? A lot of "
-        "overwriting might happen [y/N]")
-        if really.lower()=='y':
-            pass
-        else:
-            sys.exit()
+        if not force:
+            really = input(f"{str(outpath)} already exists. Do you want to continue? A lot of "
+            "overwriting might happen [y/N]")
+            if really.lower()=='y':
+                pass
+            else:
+                sys.exit()
 
     fits_list = os.listdir(inpath)
     fits_list = [str(i) for i in Path(inpath).glob('CRIRE*.fits')]
@@ -120,9 +125,15 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
     une_list=[]
     emission_list=[]
     sci_list=[]
+    sci_filename_list = []
     sci_A_list=[]
     sci_B_list=[]
+    nodpos_list = []
+    mjd_list = []
 
+
+    #Sort out science types.
+    #This may currently not work for STARING observations, if they dont get a NODPOS.
     for i in range(len(fits_list)):
         if type_list[i] == 'DARK':
             dark_list = np.append(dark_list,fits_list[i]+'   '+type_list[i])
@@ -133,7 +144,94 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         if type_list[i] == 'WAVE,UNE':
             une_list = np.append(une_list,fits_list[i]+'   WAVE_UNE')
         if type_list[i] == 'OBJECT':
-            sci_list = np.append(sci_list,fits_list[i]+'   OBS_STARING_JITTER')
+            with fitsio.open(fits_list[i]) as hdul:
+                h = hdul[0].header
+                catg = h['HIERARCH ESO DPR CATG']
+                if catg == 'SCIENCE':
+                    if pattern != 'A':
+                        nodpos_list.append(h['HIERARCH ESO SEQ NODPOS'])
+                    mjd_list.append(float(h['MJD-OBS']))
+                    sci_list = np.append(sci_list,fits_list[i])
+
+    mjd_list = np.array(mjd_list)
+    sorting = np.argsort(mjd_list)
+
+    sci_list_sorted,mjd_list_sorted = [],[]
+
+    if pattern != 'A':
+        nodding_positions,nodpos_list_sorted,sci_list_A,sci_list_B = [],[],[],[]
+
+    for i in sorting:
+        sci_list_sorted.append(sci_list[i])
+        mjd_list_sorted.append(mjd_list[i])
+        if pattern != 'A':
+            nodpos_list_sorted.append(nodpos_list[i])
+            print(sci_list[i].split('/')[-1],mjd_list[i],nodpos_list[i])
+
+
+
+
+    # Here we identify the indices and filenames of continuous nodding sequences:
+    if pattern != 'A':
+        current_pos,current_sequence,nodding_indices = nodpos_list_sorted[0],[0],[]
+        for i in range(1,len(nodpos_list_sorted)):
+            if nodpos_list_sorted[i] == current_pos:
+                current_sequence.append(i)
+            else:
+                nodding_indices.append(current_sequence)
+                current_pos = nodpos_list_sorted[i]
+                current_sequence = [i]
+        nodding_indices.append(current_sequence)
+        if pattern == 'ABBA':
+            def split_list(lst):
+                half = len(lst) // 2
+                first_half = lst[:half]
+                second_half = lst[half:]
+                return first_half, second_half
+            nodding_indices_split = [nodding_indices[0]]
+            for i in range(1,len(nodding_indices)-1):
+                for half in split_list(nodding_indices[i]):
+                    nodding_indices_split.append(half)
+            nodding_indices_split.append(nodding_indices[-1])
+            nodding_indices = nodding_indices_split
+
+        #THIS CURRENTLY ONLY WORKS FOR ABBA
+        if not (outpath/"obs_nodding").exists(): os.mkdir(outpath/"obs_nodding")
+        if not (outpath/"obs_nodding/median_bgs").exists(): os.mkdir(outpath/"obs_nodding/median_bgs")
+        n_nods = len(nodding_indices)
+        bg_nods = []
+        z = 0
+        for I in nodding_indices:
+            bg_outpath = outpath/f"obs_nodding/median_bgs/{z}_{nodpos_list_sorted[I[0]]}x{len(I)}.fits"
+            if remake_bg:
+                stack1,stack2,stack3,hdrs,h1,h2,h3 = [],[],[],[],[],[],[]
+                for i in I:
+                    with fitsio.open(sci_list_sorted[i]) as hdul:
+                        stack1.append(hdul[1].data)
+                        stack2.append(hdul[2].data)
+                        stack3.append(hdul[3].data)
+                        hdrs.append(hdul[0].header)
+                        h1.append(hdul[1].header)
+                        h2.append(hdul[2].header)
+                        h3.append(hdul[3].header)
+                M1 = np.nanmedian(stack1,axis=0)
+                M2 = np.nanmedian(stack2,axis=0)
+                M3 = np.nanmedian(stack3,axis=0)
+                hdr_out = hdrs[0]
+                for k,i in enumerate(I):
+                    hdr_out.set(f'frame{k+1}',sci_list_sorted[i].split('/')[-1])
+                hdr_out.set('NODPOS',nodpos_list_sorted[I[0]])
+
+                hdul_out = fitsio.HDUList([fitsio.PrimaryHDU(np.array(0),header=hdr_out),
+                                            fitsio.ImageHDU(M1,header=h1[0]),
+                                            fitsio.ImageHDU(M2,header=h2[0]),
+                                            fitsio.ImageHDU(M3,header=h3[0])])
+                hdul_out.writeto(bg_outpath,overwrite=True)
+            bg_nods.append(bg_outpath)
+            print(f'Done frame {z+1} from {n_nods}')
+            z+=1
+
+
 
     for i in range(len(static_list)):
         if static_type_list[i] == 'EMISSION_LINES':
@@ -330,9 +428,9 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
 
 
     if not (outpath/"obs_staring").exists(): os.mkdir(outpath/"obs_staring")
-    for i in range(len(sci_list)):
+    for i in range(len(sci_list_sorted)):
         outF = open(outpath/f"obs_staring/SCI_{i}.txt", "w")
-        outF.write(sci_list[i])
+        outF.write(sci_list_sorted[i]+'   OBS_STARING_JITTER')
         outF.write("\n")
         outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
         outF.write("\n")
@@ -347,24 +445,37 @@ def create_sof(inpath,outpath,dit=0,detlin=''):
         #I do not add the blaze function on purpose.
         outF.close()
 
-    if not (outpath/"obs_nodding").exists(): os.mkdir(outpath/"obs_nodding")
-    for i in range(len(sci_list_A)):
-        outF = open(outpath/f"obs_nodding/SCI_{i}.txt", "w")
-        outF.write(sci_A_list[i])
-        outF.write(sci_B_list[i])
-        outF.write("\n")
-        outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
-        outF.write("\n")
-        if len(detlin) > 0:
-            outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
-            outF.write("\n")
-        outF.write(bpmfiles[0]+' CAL_DARK_BPM')
-        outF.write("\n")
-        outF.write(darkfiles[0]+' CAL_DARK_MASTER')
-        outF.write("\n")
-        outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
-        #I do not add the blaze function on purpose.
-        outF.close()
+
+
+
+
+
+
+    if pattern == 'ABBA':
+        k=0
+        for z,I in enumerate(nodding_indices):
+            for i in I:
+                outF = open(outpath/f"obs_nodding/SCI_{k}.txt", "w")
+                outF.write(sci_list_sorted[i]+'   OBS_STARING_JITTER')
+                outF.write("\n")
+                if z%2==0:
+                    outF.write(str(bg_nods[z+1])+'   OBS_STARING_JITTER')
+                if z%2==1:
+                    outF.write(str(bg_nods[z-1])+'   OBS_STARING_JITTER')
+                outF.write("\n")
+                outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
+                outF.write("\n")
+                if len(detlin) > 0:
+                    outF.write(str(outpath)+"/detlin/cr2res_cal_detlin_coeffs.fits CAL_DETLIN_COEFFS")
+                    outF.write("\n")
+                outF.write(bpmfiles[0]+' CAL_DARK_BPM')
+                outF.write("\n")
+                outF.write(darkfiles[0]+' CAL_DARK_MASTER')
+                outF.write("\n")
+                outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
+                #I do not add the blaze function on purpose.
+                outF.close()
+                k+=1
 
 
 
