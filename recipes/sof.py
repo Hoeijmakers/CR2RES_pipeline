@@ -172,6 +172,7 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
 
 
 
+
     # Here we identify the indices and filenames of continuous nodding sequences:
     if pattern != 'A':
         current_pos,current_sequence,nodding_indices = nodpos_list_sorted[0],[0],[]
@@ -196,9 +197,18 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
             nodding_indices_split.append(nodding_indices[-1])
             nodding_indices = nodding_indices_split
 
+
+
         #THIS CURRENTLY ONLY WORKS FOR ABBA
         if not (outpath/"obs_nodding").exists(): os.mkdir(outpath/"obs_nodding")
         if not (outpath/"obs_nodding/median_bgs").exists(): os.mkdir(outpath/"obs_nodding/median_bgs")
+        with open(outpath/"obs_nodding/nodpos.txt",'w') as npf:
+            npf.write('')
+        for i in range(len(nodpos_list_sorted)):
+            with open(outpath/"obs_nodding/nodpos.txt",'a') as npf:
+                npf.write(str(i)+'  '+str(nodpos_list_sorted[i])+'   '+sci_list_sorted[i]+'   '+str(mjd_list_sorted[i])+"\n")
+
+
         n_nods = len(nodding_indices)
         bg_nods = []
         z = 0
