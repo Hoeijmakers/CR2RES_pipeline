@@ -47,6 +47,7 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
     import sys
     from pathlib import Path
     import glob
+    import copy
 
     outpath=Path(outpath)
 
@@ -204,8 +205,8 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
         for I in nodding_indices:
             bg_outpath = outpath/f"obs_nodding/median_bgs/{z}_{nodpos_list_sorted[I[0]]}x{len(I)}.fits"
             if remake_bg:
-                stack1,stack2,stack3,hdrs,h1,h2,h3 = [],[],[],[],[],[],[]
-                for i in I:
+                stack1,stack2,stack3,hdrs,h1,h2,h3,hduls = [],[],[],[],[],[],[],[]
+                for k,i in enumerate(I):
                     with fitsio.open(sci_list_sorted[i]) as hdul:
                         stack1.append(hdul[1].data)
                         stack2.append(hdul[2].data)
@@ -214,18 +215,23 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
                         h1.append(hdul[1].header)
                         h2.append(hdul[2].header)
                         h3.append(hdul[3].header)
+                        if k == 0:
+                            hdul_out = copy.deepcopy(hdul)
+
                 M1 = np.nanmedian(stack1,axis=0)
                 M2 = np.nanmedian(stack2,axis=0)
                 M3 = np.nanmedian(stack3,axis=0)
-                hdr_out = hdrs[0]
+                hdr_out = hdul_out[0].header
                 for k,i in enumerate(I):
                     hdr_out.set(f'frame{k+1}',sci_list_sorted[i].split('/')[-1])
-                hdr_out.set('NODPOS',nodpos_list_sorted[I[0]])
 
-                hdul_out = fitsio.HDUList([fitsio.PrimaryHDU(np.array(0),header=hdr_out),
-                                            fitsio.ImageHDU(M1,header=h1[0]),
-                                            fitsio.ImageHDU(M2,header=h2[0]),
-                                            fitsio.ImageHDU(M3,header=h3[0])])
+                hdul_out[1].data = M1
+                hdul_out[2].data = M2
+                hdul_out[3].data = M3
+                # hdul_out = fitsio.HDUList([fitsio.PrimaryHDU(np.array(0),header=hdr_out),
+                #                             fitsio.ImageHDU(M1,header=h1[0]),
+                #                             fitsio.ImageHDU(M2,header=h2[0]),
+                #                             fitsio.ImageHDU(M3,header=h3[0])])
                 hdul_out.writeto(bg_outpath,overwrite=True)
             bg_nods.append(bg_outpath)
             print(f'Done frame {z+1} from {n_nods}')
@@ -452,16 +458,17 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
 
 
     if pattern == 'ABBA':
+        if not (outpath/"obs_nodding/output/").exists(): os.mkdir(outpath/"obs_nodding/output/")
         k=0
         for z,I in enumerate(nodding_indices):
             for i in I:
                 outF = open(outpath/f"obs_nodding/SCI_{k}.txt", "w")
-                outF.write(sci_list_sorted[i]+'   OBS_STARING_JITTER')
+                outF.write(sci_list_sorted[i]+'   OBS_NODDING_JITTER')
                 outF.write("\n")
                 if z%2==0:
-                    outF.write(str(bg_nods[z+1])+'   OBS_STARING_JITTER')
+                    outF.write(str(bg_nods[z+1])+'   OBS_NODDING_JITTER')
                 if z%2==1:
-                    outF.write(str(bg_nods[z-1])+'   OBS_STARING_JITTER')
+                    outF.write(str(bg_nods[z-1])+'   OBS_NODDING_JITTER')
                 outF.write("\n")
                 outF.write(str(outpath)+'/util_slit_curv/cr2res_util_calib_calibrated_collapsed_tw_tw.fits UTIL_SLIT_CURV_TW')
                 outF.write("\n")
@@ -470,8 +477,8 @@ def create_sof(inpath,outpath,dit=0,detlin='',pattern='A',remake_bg=True):
                     outF.write("\n")
                 outF.write(bpmfiles[0]+' CAL_DARK_BPM')
                 outF.write("\n")
-                outF.write(darkfiles[0]+' CAL_DARK_MASTER')
-                outF.write("\n")
+                # outF.write(darkfiles[0]+' CAL_DARK_MASTER') #Not needed because it self-subtracts?
+                # outF.write("\n")
                 outF.write(str(outpath)+"/util_normflat/cr2res_util_normflat_Open_master_flat.fits CAL_FLAT_MASTER")
                 #I do not add the blaze function on purpose.
                 outF.close()
